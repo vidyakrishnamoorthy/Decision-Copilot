@@ -175,6 +175,37 @@ def add_page_styles():
             border-radius: 8px;
             font-weight: 700;
           }
+
+          .composer-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 0.35rem;
+            color: var(--text);
+            font-size: 0.95rem;
+            font-weight: 650;
+          }
+
+          .loading-dot {
+            width: 0.85rem;
+            height: 0.85rem;
+            border: 2px solid rgba(125, 211, 252, 0.25);
+            border-top-color: var(--accent);
+            border-radius: 999px;
+            animation: spin 0.8s linear infinite;
+            flex: 0 0 auto;
+          }
+
+          .loading-text {
+            color: var(--muted);
+            font-weight: 500;
+          }
+
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -317,10 +348,39 @@ def rerun_app():
         experimental_rerun()
 
 
+def submit_user_message(user_input):
+    cleaned_input = user_input.strip()
+    if not cleaned_input:
+        return
+
+    st.session_state.messages.append({"role": "user", "content": cleaned_input})
+    st.session_state.pending_message = cleaned_input
+    st.session_state.is_generating = True
+    rerun_app()
+
+
+def resolve_pending_response():
+    pending_message = st.session_state.get("pending_message")
+    if not pending_message or not st.session_state.get("is_generating"):
+        return
+
+    response = ask_gpt(st.session_state.messages)
+    st.session_state.messages.append(response)
+    st.session_state.pending_message = ""
+    st.session_state.is_generating = False
+    rerun_app()
+
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 else:
     st.session_state.messages = normalize_messages(st.session_state.messages)
+
+if "pending_message" not in st.session_state:
+    st.session_state.pending_message = ""
+
+if "is_generating" not in st.session_state:
+    st.session_state.is_generating = False
 
 add_page_styles()
 
@@ -332,23 +392,45 @@ st.markdown(
 
 render_chat(st.session_state.messages)
 
-with st.form("decision_input", clear_on_submit=True):
-    user_input = st.text_area("Your input", placeholder="Type your decision here...")
-    send, clear = st.columns([1, 1])
+clear = st.button("Clear history")
 
-    with send:
+if clear:
+    st.session_state.messages = []
+    st.session_state.pending_message = ""
+    st.session_state.is_generating = False
+    rerun_app()
+
+if st.session_state.get("is_generating"):
+    st.markdown(
+        """
+        <div class="composer-label">
+          <span>Your input</span>
+          <span class="loading-dot" aria-hidden="true"></span>
+          <span class="loading-text">Generating response</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.spinner("Generating response..."):
+        resolve_pending_response()
+else:
+    st.markdown(
+        """
+        <div class="composer-label">
+          <span>Your input</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+if hasattr(st, "chat_input"):
+    user_input = st.chat_input("Type your decision here...")
+    if user_input:
+        submit_user_message(user_input)
+else:
+    with st.form("decision_input", clear_on_submit=True):
+        user_input = st.text_area("Type your decision here...", label_visibility="collapsed")
         submitted = st.form_submit_button("Submit")
 
-    with clear:
-        cleared = st.form_submit_button("Clear history")
-
-if submitted:
-    cleaned_input = user_input.strip()
-    if cleaned_input:
-        st.session_state.messages.append({"role": "user", "content": cleaned_input})
-        st.session_state.messages.append(ask_gpt(st.session_state.messages))
-        rerun_app()
-
-if cleared:
-    st.session_state.messages = []
-    rerun_app()
+    if submitted:
+        submit_user_message(user_input)
