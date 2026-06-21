@@ -1,5 +1,6 @@
 import html
 import os
+import textwrap
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -181,12 +182,34 @@ def add_page_styles():
 
 
 def render_chat(messages):
+    if hasattr(st, "chat_message"):
+        with st.chat_message("assistant"):
+            st.markdown(
+                "What career crossroads are you facing today? I can help weigh the options."
+            )
+
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+            if role == "user":
+                with st.chat_message("user"):
+                    st.markdown(content)
+            elif role == "assistant":
+                with st.chat_message("assistant"):
+                    st.markdown(content)
+            else:
+                with st.chat_message("assistant"):
+                    st.markdown(f"**Note:** {content}")
+        return
+
     rows = [
-        """
+        textwrap.dedent(
+            """
         <div class="message-row assistant">
           <div class="message-bubble assistant">What career crossroads are you facing today? I can help weigh the options.</div>
         </div>
-        """
+            """
+        ).strip()
     ]
 
     for message in messages:
@@ -196,14 +219,19 @@ def render_chat(messages):
         row_class = "assistant" if role == "assistant" else role
         bubble_class = "assistant" if role == "assistant" else role
         rows.append(
-            f"""
+            textwrap.dedent(
+                f"""
             <div class="message-row {row_class}">
               <div class="message-bubble {bubble_class}">{escaped_message}</div>
             </div>
-            """
+                """
+            ).strip()
         )
 
-    st.markdown(f'<section class="chat">{"".join(rows)}</section>', unsafe_allow_html=True)
+    st.markdown(
+        textwrap.dedent(f"""<section class="chat">{"".join(rows)}</section>"""),
+        unsafe_allow_html=True,
+    )
 
 
 def normalize_messages(messages):
