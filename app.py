@@ -1,9 +1,31 @@
 import html
+import os
 
 import streamlit as st
+from dotenv import load_dotenv
+from openai import OpenAI
+
+
+load_dotenv()
 
 
 st.set_page_config(page_title="Decision Copilot", page_icon="*", layout="centered")
+
+SYSTEM_PROMPT = """
+You are Decision Copilot. The user is at a career crossroads.
+Only answer questions about career crossroads, job decisions, role changes,
+promotion choices, leaving or staying, switching fields, negotiating offers,
+and related career tradeoffs.
+If the user asks about anything outside that scope, briefly say you can only
+help with career crossroads questions and ask them to refocus on a career
+decision.
+Do not tell the user what to choose. Do not recommend a decision.
+Instead, present the main options with clear pros and cons, note any tradeoffs
+or risks, and end by asking whether there are any additional factors they want
+to consider.
+Keep the tone sympathetic yet professional. Keep responses concise, specific,
+and easy to act on.
+"""
 
 
 def add_page_styles():
@@ -94,7 +116,8 @@ def add_page_styles():
             justify-content: flex-end;
           }
 
-          .message-row.assistant {
+          .message-row.assistant,
+          .message-row.error {
             justify-content: flex-start;
           }
 
@@ -113,6 +136,13 @@ def add_page_styles():
             background: rgba(226, 232, 240, 0.14);
             border: 1px solid var(--border);
             color: var(--text);
+            border-radius: 18px 18px 18px 4px;
+          }
+
+          .message-bubble.error {
+            background: rgba(127, 29, 29, 0.45);
+            border: 1px solid rgba(252, 165, 165, 0.45);
+            color: #fee2e2;
             border-radius: 18px 18px 18px 4px;
           }
 
@@ -154,17 +184,21 @@ def render_chat(messages):
     rows = [
         """
         <div class="message-row assistant">
-          <div class="message-bubble assistant">What can I help you decide today?</div>
+          <div class="message-bubble assistant">What career crossroads are you facing today? I can help weigh the options.</div>
         </div>
         """
     ]
 
     for message in messages:
-        escaped_message = html.escape(message)
+        role = message.get("role", "user")
+        content = message.get("content", "")
+        escaped_message = html.escape(content)
+        row_class = "assistant" if role == "assistant" else role
+        bubble_class = "assistant" if role == "assistant" else role
         rows.append(
             f"""
-            <div class="message-row">
-              <div class="message-bubble">{escaped_message}</div>
+            <div class="message-row {row_class}">
+              <div class="message-bubble {bubble_class}">{escaped_message}</div>
             </div>
             """
         )
@@ -172,8 +206,93 @@ def render_chat(messages):
     st.markdown(f'<section class="chat">{"".join(rows)}</section>', unsafe_allow_html=True)
 
 
+def normalize_messages(messages):
+    if not messages:
+        return []
+
+    normalized = []
+    for message in messages:
+        if isinstance(message, str):
+            normalized.append({"role": "user", "content": message})
+        elif isinstance(message, dict) and "content" in message:
+            normalized.append(
+                {
+                    "role": message.get("role", "user"),
+                    "content": str(message.get("content", "")),
+                }
+            )
+    return normalized
+
+
+def build_gpt_input(messages):
+    input_messages = [{"role": "developer", "content": SYSTEM_PROMPT}]
+    for message in messages:
+        if message["role"] == "error":
+            continue
+        role = "assistant" if message["role"] == "assistant" else "user"
+        input_messages.append({"role": role, "content": message["content"]})
+    return input_messages
+
+
+def get_openai_api_key():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        return api_key
+
+    try:
+        return st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        return None
+
+
+def get_openai_model():
+    model = os.getenv("OPENAI_MODEL")
+    if model:
+        return model
+
+    try:
+        return st.secrets.get("OPENAI_MODEL", "gpt-5.5")
+    except Exception:
+        return "gpt-5.5"
+
+
+def ask_gpt(messages):
+    api_key = get_openai_api_key()
+    if not api_key:
+        return {
+            "role": "error",
+            "content": "Missing OPENAI_API_KEY. Add it to your environment or Streamlit secrets, then restart the app.",
+        }
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.responses.create(
+            model=get_openai_model(),
+            input=build_gpt_input(messages),
+        )
+        return {"role": "assistant", "content": response.output_text}
+    except Exception as exc:
+        return {
+            "role": "error",
+            "content": f"GPT request failed: {exc}",
+        }
+
+
+def rerun_app():
+    rerun = getattr(st, "rerun", None)
+    if callable(rerun):
+        rerun()
+        return
+
+    experimental_rerun = getattr(st, "experimental_rerun", None)
+    if callable(experimental_rerun):
+        experimental_rerun()
+
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
+else:
+    st.session_state.messages = normalize_messages(st.session_state.messages)
 
 add_page_styles()
 
@@ -198,9 +317,10 @@ with st.form("decision_input", clear_on_submit=True):
 if submitted:
     cleaned_input = user_input.strip()
     if cleaned_input:
-        st.session_state.messages.append(cleaned_input)
-        st.rerun()
+        st.session_state.messages.append({"role": "user", "content": cleaned_input})
+        st.session_state.messages.append(ask_gpt(st.session_state.messages))
+        rerun_app()
 
 if cleared:
     st.session_state.messages = []
-    st.rerun()
+    rerun_app()
