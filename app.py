@@ -184,6 +184,10 @@ PAGE = """
         justify-content: flex-end;
       }
 
+      .message-row.assistant {
+        justify-content: flex-start;
+      }
+
       .message-bubble {
         max-width: min(80%, 520px);
         padding: 12px 16px;
@@ -194,6 +198,13 @@ PAGE = """
         overflow-wrap: anywhere;
         white-space: pre-wrap;
       }
+
+      .message-bubble.assistant {
+        background: rgba(226, 232, 240, 0.14);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 18px 18px 18px 4px;
+      }
     </style>
   </head>
   <body>
@@ -201,15 +212,18 @@ PAGE = """
       <h1>Decision Copilot</h1>
       <p class="subtitle">Enter the decision, question, or tradeoff you want to work through.</p>
 
-      {% if messages %}
-        <section class="chat" aria-live="polite" aria-label="Chat messages">
+      <section class="chat" aria-live="polite" aria-label="Chat messages">
+        <div class="message-row assistant">
+          <div class="message-bubble assistant">What can I help you decide today?</div>
+        </div>
+        {% if messages %}
           {% for message in messages %}
             <div class="message-row">
               <div class="message-bubble">{{ message }}</div>
             </div>
           {% endfor %}
-        </section>
-      {% endif %}
+        {% endif %}
+      </section>
 
       <form method="post">
         <label for="user_input">Your input</label>
@@ -252,4 +266,4 @@ def index():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
